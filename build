@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -e
+
+: "${HARBOR_CHART_VERSION:=1.17.2}" # Harbor v2.13.2
+: "${K8SAPP_APPLICATION_VERSION:=$HARBOR_CHART_VERSION}"
+
+out=manifests/base/harbor.yaml
+
+mkdir -p "resources/values/harbor"
+mkdir -p "manifests/base"
+
+values="resources/values/harbor/values.yaml"
+[[ ! -e $values ]] && touch $values
+
+# TODO add proxy env vars
+
+# shellcheck disable=SC2317
+cleanup() {
+	echo "Cleaning up helm pull"
+	rm -rf harbor
+	#rm "$out"
+}
+trap cleanup INT EXIT TERM
+
+helm repo add harbor "https://helm.goharbor.io"
+helm repo update
+
+helm pull harbor/harbor --untar \
+	--version "$HARBOR_CHART_VERSION"
+mv "harbor/values.yaml" "resources/values/harbor/defaults.yaml"
+
+# Pull down and modify templates
+helm template harbor harbor/harbor \
+	--values resources/values/harbor/values.yaml \
+	--version "$HARBOR_CHART_VERSION" \
+	--namespace harbor \
+	>"$out"
+
+# TODO Convert all Secrets to ExternalSecrets
+#secret_names=$(yq 'select(.kind == "Secret")| .metadata.name' "$out")
+#for name in $secret_names; do
+#	echo "$name"
+#done
+
+# TODO Remove all Secrets
+#yq -i 'select(.kind != "Secret")' "$out"
